@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Name Picker</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #000; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+  #app {
+    background: #000;
+    min-height: 520px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    user-select: none;
+    padding: 2rem;
+    position: relative;
+    border-radius: 16px;
+    width: 480px;
+  }
+  h2.sr-only { position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0; }
+  #machine-wrap { width: 380px; position: relative; }
+  #slot-machine { width: 100%; border-radius: 12px; overflow: hidden; position: relative; }
+  #reel-viewport { height: 264px; overflow: hidden; position: relative; }
+  #reel-track { position: absolute; left: 0; right: 0; top: 0; will-change: transform; }
+  .reel-item {
+    height: 88px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Courier New', monospace;
+    font-size: 24px;
+    color: rgba(255,255,255,0.55);
+    letter-spacing: 0.05em;
+    padding: 0 1.5rem;
+    text-align: center;
+  }
+  .reel-item.is-winner { font-size: 42px; font-weight: bold; color: #fff; letter-spacing: 0.08em; }
+  #fade-top { position: absolute; top: 0; left: 0; right: 0; height: 110px; background: linear-gradient(to bottom, #000 10%, transparent 100%); pointer-events: none; z-index: 2; }
+  #fade-bot { position: absolute; bottom: 0; left: 0; right: 0; height: 110px; background: linear-gradient(to top, #000 10%, transparent 100%); pointer-events: none; z-index: 2; }
+  @keyframes winner-pulse { 0%{transform:scale(1)} 35%{transform:scale(1.08)} 65%{transform:scale(0.96)} 100%{transform:scale(1)} }
+  .winner-pop { animation: winner-pulse 0.5s cubic-bezier(0.22,1,0.36,1) forwards; }
+
+  #modal-overlay {
+    display: none;
+    position: absolute;
+    inset: 0;
+    background: rgba(0,0,0,0.97);
+    border-radius: 14px;
+    z-index: 20;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem;
+    gap: 1rem;
+  }
+  #modal-overlay.open { display: flex; }
+  .modal-label {
+    font-family: 'Courier New', monospace;
+    color: #fff;
+    font-size: 11px;
+    letter-spacing: 0.3em;
+    opacity: 0.4;
+    text-transform: uppercase;
+    align-self: flex-start;
+  }
+  #name-input-area {
+    width: 100%;
+    background: #000;
+    border: 1px solid rgba(255,255,255,0.3);
+    border-radius: 8px;
+    color: #fff;
+    font-family: 'Courier New', monospace;
+    font-size: 14px;
+    padding: 0.75rem 1rem;
+    resize: vertical;
+    min-height: 160px;
+    outline: none;
+    line-height: 1.8;
+  }
+  .bias-row {
+    width: 100%;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  #bias-name-input {
+    flex: 1;
+    background: #000;
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 8px;
+    color: #fff;
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    padding: 0.55rem 0.85rem;
+    outline: none;
+  }
+  #bias-name-input:focus { border-color: rgba(255,255,255,0.5); }
+  #bias-name-input::placeholder { color: rgba(255,255,255,0.2); }
+  .bias-pct-wrap {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 8px;
+    padding: 0.55rem 0.85rem;
+    width: 90px;
+  }
+  #bias-pct-input {
+    background: transparent;
+    border: none;
+    color: #fff;
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    width: 36px;
+    outline: none;
+    text-align: right;
+  }
+  .pct-symbol {
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    color: rgba(255,255,255,0.3);
+  }
+  #bias-status {
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+    color: rgba(255,255,255,0.3);
+    letter-spacing: 0.1em;
+    min-height: 16px;
+    align-self: flex-start;
+  }
+  #bias-status.armed { color: rgba(255,255,255,0.6); }
+  #modal-btn {
+    background: #fff;
+    color: #000;
+    border: none;
+    border-radius: 6px;
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    letter-spacing: 0.15em;
+    padding: 0.65rem 2.5rem;
+    cursor: pointer;
+    font-weight: bold;
+    text-transform: uppercase;
+  }
+  #modal-btn:hover { background: #ddd; }
+  .divider { width: 100%; height: 1px; background: rgba(255,255,255,0.08); }
+</style>
+</head>
+<body>
+<div id="app" role="main">
+  <h2 class="sr-only">Random name picker slot machine</h2>
+  <div id="machine-wrap">
+    <div id="slot-machine">
+      <div id="reel-viewport">
+        <div id="reel-track"></div>
+        <div id="fade-top"></div>
+        <div id="fade-bot"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-overlay" role="dialog">
+    <div class="modal-label">Names — one per line</div>
+    <textarea id="name-input-area" placeholder="Alice&#10;Bob&#10;Charlie&#10;..." spellcheck="false"></textarea>
+    <div class="divider"></div>
+    <div class="modal-label">Bias next roll</div>
+    <div class="bias-row">
+      <input id="bias-name-input" type="text" placeholder="name to rig..." autocomplete="off" spellcheck="false" />
+      <div class="bias-pct-wrap">
+        <input id="bias-pct-input" type="number" min="1" max="99" value="95" />
+        <span class="pct-symbol">%</span>
+      </div>
+    </div>
+    <div id="bias-status"></div>
+    <button id="modal-btn">Save</button>
+  </div>
+</div>
+
+<script>
+  const app        = document.getElementById('app');
+  const track      = document.getElementById('reel-track');
+  const modal      = document.getElementById('modal-overlay');
+  const textarea   = document.getElementById('name-input-area');
+  const saveBtn    = document.getElementById('modal-btn');
+  const biasName   = document.getElementById('bias-name-input');
+  const biasPct    = document.getElementById('bias-pct-input');
+  const biasStat   = document.getElementById('bias-status');
+
+  const ITEM_H = 88;
+  const VISIBLE = 3;
+
+  let names = [];
+  let spinning = false;
+  let modalOpen = false;
+  let animFrame = null;
+  let biasTarget = null;
+  let biasChance = 0;
+
+  function updateBiasStatus() {
+    const n = biasName.value.trim();
+    const p = parseInt(biasPct.value);
+    if (n && p > 0 && p < 100) {
+      biasStat.textContent = '\u25cf armed — ' + n + ' · ' + p + '%';
+      biasStat.classList.add('armed');
+    } else {
+      biasStat.textContent = '';
+      biasStat.classList.remove('armed');
+    }
+  }
+
+  biasName.addEventListener('input', updateBiasStatus);
+  biasPct.addEventListener('input', updateBiasStatus);
+
+  function weightedRand(pool, forceName, forceChance) {
+    if (forceName && pool.includes(forceName) && Math.random() * 100 < forceChance) {
+      return forceName;
+    }
+    return pool[Math.floor(Math.random() * pool.length)];
+  }
+
+  function rand(arr, ex1, ex2) {
+    const pool = arr.filter(n => n !== ex1 && n !== ex2);
+    const src = pool.length ? pool : arr;
+    return src[Math.floor(Math.random() * src.length)];
+  }
+
+  function buildTrack(top, win, bot) {
+    track.innerHTML = '';
+    [top, win, bot].forEach((n, i) => {
+      const div = document.createElement('div');
+      div.className = 'reel-item' + (i === 1 ? ' is-winner' : '');
+      div.textContent = n || '—';
+      track.appendChild(div);
+    });
+    track.style.transform = 'translateY(0px)';
+  }
+
+  function easeOutExpo(t) {
+    return t === 1 ? 1 : 1 - Math.pow(2, -12 * t);
+  }
+
+  function spin() {
+    if (spinning || modalOpen || names.length === 0) return;
+    spinning = true;
+
+    const winner = weightedRand(names, biasTarget, biasChance);
+    biasTarget = null;
+    biasChance = 0;
+
+    const above = rand(names, winner);
+    const below = rand(names, winner, above);
+
+    const totalNames = 55 + Math.floor(Math.random() * 20);
+    const items = [];
+    for (let i = 0; i < totalNames; i++) items.push(rand(names));
+    items.push(above, winner, below);
+
+    track.innerHTML = '';
+    items.forEach((n, i) => {
+      const div = document.createElement('div');
+      const isWin = (i === items.length - 2);
+      div.className = 'reel-item' + (isWin ? ' is-winner' : '');
+      div.textContent = n;
+      track.appendChild(div);
+    });
+
+    const totalScroll = (items.length - VISIBLE) * ITEM_H;
+    const startTime = performance.now();
+    const duration = 4200 + Math.random() * 800;
+
+    function customEase(t) {
+      if (t < 0.35) return (t / 0.35) * 0.45;
+      const t2 = (t - 0.35) / 0.65;
+      return 0.45 + 0.55 * easeOutExpo(t2);
+    }
+
+    track.style.transform = 'translateY(0px)';
+
+    function step(now) {
+      const elapsed = now - startTime;
+      const t = Math.min(elapsed / duration, 1);
+      const eased = customEase(t);
+      track.style.transform = `translateY(-${eased * totalScroll}px)`;
+      if (t < 1) {
+        animFrame = requestAnimationFrame(step);
+      } else {
+        track.style.transform = `translateY(-${totalScroll}px)`;
+        spinning = false;
+        const winnerEl = track.querySelectorAll('.reel-item')[items.length - 2];
+        if (winnerEl) winnerEl.classList.add('winner-pop');
+      }
+    }
+
+    animFrame = requestAnimationFrame(step);
+  }
+
+  function openModal(e) {
+    if (e) e.stopPropagation();
+    if (animFrame) cancelAnimationFrame(animFrame);
+    spinning = false;
+    modalOpen = true;
+    textarea.value = names.join('\n');
+    biasName.value = biasTarget || '';
+    biasPct.value = biasChance || 95;
+    updateBiasStatus();
+    modal.classList.add('open');
+    setTimeout(() => textarea.focus(), 50);
+  }
+
+  function closeModal() {
+    const lines = textarea.value.split('\n').map(s => s.trim()).filter(Boolean);
+    names = [...new Set(lines)];
+
+    const bn = biasName.value.trim();
+    const bp = parseInt(biasPct.value);
+    if (bn && bp > 0 && bp <= 100) {
+      biasTarget = bn;
+      biasChance = bp;
+    } else {
+      biasTarget = null;
+      biasChance = 0;
+    }
+
+    modal.classList.remove('open');
+    modalOpen = false;
+
+    if (names.length > 0) {
+      const w = rand(names);
+      buildTrack(rand(names, w), w, rand(names, w));
+    } else {
+      buildTrack('—', '—', '—');
+    }
+  }
+
+  buildTrack('—', '—', '—');
+
+  app.addEventListener('click', (e) => {
+    if (modal.contains(e.target)) return;
+    spin();
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === ' ' && !modalOpen) { e.preventDefault(); spin(); }
+    if (e.key === 'T' && e.shiftKey && !modalOpen) { e.preventDefault(); openModal(); }
+    if (e.key === 'Escape' && modalOpen) closeModal();
+  });
+
+  textarea.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); closeModal(); } });
+  saveBtn.addEventListener('click', (e) => { e.stopPropagation(); closeModal(); });
+  modal.addEventListener('click', (e) => e.stopPropagation());
+</script>
+</body>
+</html>
